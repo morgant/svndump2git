@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+
+#
+# svndump2git - convert SVN repo dumps to github repos using svn2git
+#
+# CHANGE LOG:
+#
+# v0.1   2020-09-22 - Morgan Aldridge <morgant@makkintosshu.com>
+#                     Initial version.
+# LICENSE:
+# 
+# Copyright (c) 2020, Morgan T. Aldridge. All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without 
+# modification, are permitted provided that the following conditions are met:
+# 
+# - Redistributions of source code must retain the above copyright notice, this 
+#   list of conditions and the following disclaimer.
+# - Redistributions in binary form must reproduce the above copyright notice, 
+#   this list of conditions and the following disclaimer in the documentation 
+#   and/or other materials provided with the distribution.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE 
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL 
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR 
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER 
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, 
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+tool="$(basename "$0")"
+
+usage() {
+  printf "Usage: $tool <reponame> <dumpfile>\n\n"
+}
+
+extract() {
+  local dst="${TMPDIR}/${repo_name}.svn"
+  printf "Decompressing '%s' to '%s'... " "$svn_dump" "$dst"
+  if "$1" -c "$svn_dump" > "$dst"; then
+    printf "Done\n"
+    svn_dump="$dst"
+  else
+    printf "ERROR!\n"
+  fi
+}
+
+if [ $# -ne 2 ]; then
+  usage
+  exit 1
+fi
+repo_name="$1"
+svn_dump="$2"
+
+if [ ! -f "$svn_dump" ]; then
+  printf "ERROR: SVN dump file '$svn_dump' does not exist or is not a file!\n\n"
+  usage
+  exit 1
+fi
+
+if ! which svn2git; then
+  printf "ERROR: Could not find svn2git! Please make sure it is installed and in your PATH.\n\n"
+  exit 1
+fi
+
+# create a temp directory to do our work in
+printf "Creating temp directory... "
+TMPDIR="$(mktemp -d /tmp/${tool}.XXXXXX)"
+if [ $? -gt 0 ]; then
+  printf "ERROR: Unable to create a temporary directory!\n\n"
+  exit 1
+else
+  printf "Done\n"
+fi
+
+# decompress the svn dump file, if necessary
+case "$(basename "$svn_dump")" in
+  *.gz)
+    extract gunzip
+    ;;
+  *.bz2)
+    extract bunzip2
+    ;;
+esac
+
+# import the svn dump file into a temp repository
+printf "Creating temp SVN repo... "
+if svnadmin create "${TMPDIR}/${repo_name}"; then
+  printf "Done\n"
+else
+  printf "ERROR!\n"
+fi
+printf "Importing SVN dump file '%s' to temp repo...\n" "$svn_dump"
+if svnadmin load "${TMPDIR}/${repo_name}" < "$svn_dump"; then
+  printf "Done\n"
+else
+  printf "ERROR!\n"
+fi
+
+# convert the temp svn repo into a git repo in the current working directory
+printf "Migrating temp SVN repo to Git repo...\n"
+if svn2git "file://${TMPDIR}/${repo_name}"; then
+  printf "Done\n"
+else
+  printf "ERROR!\n"
+fi
+
+# delete the temp directory
+printf "Cleaning up temp directory... "
+if rm -rf "$TMPDIR"; then
+  printf "Done\n"
+else
+  printf "ERROR!\n"
+fi
