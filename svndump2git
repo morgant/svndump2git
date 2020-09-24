@@ -100,9 +100,19 @@ else
   printf "ERROR!\n"
 fi
 
+# generate svn authors file from the temp repository
+printf "Generating SVN authors file from temp repo... "
+#if svn log --quiet "file://${TMPDIR}/svn" | awk -F ' \\|' '/^r/ {print $2}' | sort -u > "${TMPDIR}/SVN_AUTHORS"; then
+if svn log --quiet "file://${TMPDIR}/svn" | awk -F ' \\|' '/^r/ {print $2}' | sed 's/ //g' | sort -u > "${TMPDIR}/SVN_AUTHORS"; then
+  vi "${TMPDIR}/SVN_AUTHORS"
+  printf "Done\n"
+else
+  printf "ERROR!\n"
+fi
+
 # convert the temp svn repo into a git repo in the current working directory
 printf "Migrating temp SVN repo to Git repo...\n"
-if svn2git "file://${TMPDIR}/svn"; then
+if svn2git "file://${TMPDIR}/svn" --authors="${TMPDIR}/SVN_AUTHORS"; then
   printf "Done\n"
 else
   printf "ERROR!\n"
